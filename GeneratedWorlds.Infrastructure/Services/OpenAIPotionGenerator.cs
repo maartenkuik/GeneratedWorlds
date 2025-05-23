@@ -1,4 +1,5 @@
 ﻿using GeneratedWorlds.Application.Common.Interfaces;
+using GeneratedWorlds.Domain.Types;
 using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
@@ -21,9 +22,18 @@ namespace GeneratedWorlds.Infrastructure.Services
             _apiKey = configuration["OpenAI:ApiKey"];
         }
 
-        public async Task<(string name, string effect)> GeneratePotionAsync(int skillLevel)
+        public async Task<(string name, string effect)> GeneratePotionAsync(int skillLevel, SkillType skillType)
         {
-            var prompt = $"Generate a potion for a fantasy RPG with brewery skill level {skillLevel}. Return JSON with 'name' and 'effect'.";
+            var contextParameter = "";
+
+            switch (skillType)
+            {
+                case SkillType.Brewery:
+                    contextParameter = "The potion should grant an effect that grants benefits to the brewery skill. Example would be 'Increases brewed potion by x', 'Allows user to create a more advanced potion effect', 'etc...'";
+                    break;
+            }
+
+            var prompt = $"Generate a potion for a fantasy RPG with brewery skill level {skillLevel}, {contextParameter}. Return JSON with 'name' and 'effect'.";
 
             var requestBody = new
             {

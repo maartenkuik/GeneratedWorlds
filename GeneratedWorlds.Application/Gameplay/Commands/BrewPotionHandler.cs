@@ -1,11 +1,9 @@
 ﻿using GeneratedWorlds.Application.Common.Interfaces;
+using GeneratedWorlds.Application.Items.Commands;
 using GeneratedWorlds.Domain.Entities;
+using GeneratedWorlds.Domain.Entities.Items;
+using GeneratedWorlds.Domain.Types;
 using MediatR;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace GeneratedWorlds.Application.Gameplay.Commands
 {
@@ -19,35 +17,43 @@ namespace GeneratedWorlds.Application.Gameplay.Commands
 
     public class BrewPotionHandler : IRequestHandler<BrewPotionCommand, BrewPotionResult>
     {
-        private readonly IItemRepository<Potion> _potionRepository;
         private readonly ICharacterRepository _characterRepository;
-        private readonly Random _random = new();
+        private readonly IPotionGenerator _potionGenerator;
+        private readonly IMediator _mediator;
 
         public BrewPotionHandler(
-            IItemRepository<Potion> potionRepository,
-            ICharacterRepository characterRepository)
+            ICharacterRepository characterRepository,
+            IPotionGenerator potionGenerator,
+            IMediator mediator)
         {
-            _potionRepository = potionRepository;
             _characterRepository = characterRepository;
+            _potionGenerator = potionGenerator;
+            _mediator = mediator;
         }
 
         public async Task<BrewPotionResult> Handle(BrewPotionCommand request, CancellationToken cancellationToken)
         {
-            var potions = (await _potionRepository.GetAllAsync()).ToList();
+            var character = await _characterRepository.GetByIdAsync(request.CharacterReference);
+            if (character == null)
+                throw new InvalidOperationException("Character not found.");
 
-            if (!potions.Any())
-                throw new InvalidOperationException("No potions available to brew.");
+            var skillLevel = character.Skills.Skills.TryGetValue(SkillType.Brewery, out var level) ? level : 1;
 
-            var selectedPotion = potions[_random.Next(potions.Count)];
+            // Generate name + effect from AI
+            var (name, effect) = await _potionGenerator.GeneratePotionAsync(skillLevel, SkillType.Brewery);
 
-            var success = await _characterRepository.AddItemToInventoryAsync(request.CharacterReference, selectedPotion, 1);
-            if (!success)
-                throw new InvalidOperationException("Character not found or item could not be added.");
+            // Save potion to DB via MediatR
+            var potion = await _mediator.Send(new CreatePotionCommand(name, SkillType.Brewery, effect), cancellationToken);
+
+            // Add to character's inventory
+            var added = await _characterRepository.AddItemToInventoryAsync(character.Reference, potion, 1);
+            if (!added)
+                throw new InvalidOperationException("Failed to add potion to character inventory.");
 
             return new BrewPotionResult
             {
-                Potion = selectedPotion,
-                Message = $"Brewed {selectedPotion.Name}!"
+                Potion = potion,
+                Message = $"You brewed a {potion.Name}!"
             };
         }
     }
